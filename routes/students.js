@@ -5,19 +5,45 @@ const Student = require('../models/Student');
 
 
 // GET all students (PROTECTED with requireAuth)
+// CHANGED: added populate() with field selection (Task 1)
 router.get('/', requireAuth, async (req, res) => {
     try {
-        const students = await Student.find();
+        const students = await Student.find()
+            .populate('createdBy', 'email role');
         res.json(students);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// POST create student 
-router.post('/', async (req, res) => {
+// NEW: aggregation endpoint (Task 2)
+// GET /api/students/stats/by-creator
+router.get('/stats/by-creator', requireAuth, async (req, res) => {
     try {
-        const newStudent = await Student.create(req.body);
+        const stats = await Student.aggregate([
+            { $match: { isActive: true } },
+            { $group: {
+                _id: '$createdBy',
+                totalStudents: { $sum: 1 },
+                averageAge: { $avg: '$age' }
+            } },
+            { $sort: { totalStudents: -1 } },
+            { $limit: 5 }
+        ]);
+        res.json(stats);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST create student
+// CHANGED: now needs a token, and saves who created the student
+router.post('/', requireAuth, async (req, res) => {
+    try {
+        const newStudent = await Student.create({
+            ...req.body,
+            createdBy: req.user.userId
+        });
         res.status(201).json(newStudent);
     } catch (err) {
         res.status(400).json({ error: err.message });
